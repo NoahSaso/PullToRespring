@@ -1,4 +1,5 @@
-@interface PrefsListController : UIViewController
+#import <Preferences/Preferences.h>
+@interface PrefsListController : PSListController
 @end
 
 %hook PrefsListController
@@ -7,7 +8,7 @@
 	%orig;
 	UIRefreshControl* refreshControl = [[UIRefreshControl alloc] init];
 	[refreshControl addTarget:self action:@selector(respringForDays) forControlEvents:UIControlEventValueChanged];
-	[self.view addSubview:refreshControl];
+	[self.table addSubview:refreshControl];
 }
 
 %new - (void)respringForDays {
