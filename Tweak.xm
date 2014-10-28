@@ -3,22 +3,6 @@
 - (UIRefreshControl *)initiateRefreshControl;
 @end
 
-// Get an instance of SpringBoard
-/*
-@interface SpringBoard : NSObject
-- (void)_relaunchSpringBoardNow;
-@end
-
-static SpringBoard* springBoard;
-%hook SpringBoard
-- (id)init {
-    springBoard = %orig;
-    return springBoard;
-}
-%end
-*/
-// Got instance, yay :D
-
 static UIRefreshControl* refreshControl = nil;
 static BOOL enabled;
 
@@ -57,9 +41,7 @@ static void loadPreferences() {
 %new - (void)respringForDays {
     NSLog(@"[PullToRespring] Respringing...");
     [refreshControl endRefreshing];
-    // Not working, can anyone shed some light on this situation?
-	//[springBoard _relaunchSpringBoardNow];
-    system("killall -9 SpringBoard");
+    system("killall backboardd");
 }
 
 %end
