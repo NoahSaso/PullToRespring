@@ -9,6 +9,7 @@
 	UIRefreshControl* refreshControl = [[UIRefreshControl alloc] init];
 	[refreshControl addTarget:self action:@selector(respringForDays) forControlEvents:UIControlEventValueChanged];
 	[self.table addSubview:refreshControl];
+	[refreshControl release];
 }
 
 %new - (void)respringForDays {
