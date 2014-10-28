@@ -10,6 +10,6 @@ PullToRespring_FRAMEWORKS = UIKit
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-install::
-	install.exec "killall -9 Preferences"
-SUBPROJECTS += pulltorespring
+	install.exec "killall -9 SpringBoard"
+SUBPROJECTS += Preferences
 include $(THEOS_MAKE_PATH)/aggregate.mk

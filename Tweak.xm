@@ -3,6 +3,22 @@
 - (UIRefreshControl *)initiateRefreshControl;
 @end
 
+// Get an instance of SpringBoard
+/*
+@interface SpringBoard : NSObject
+- (void)_relaunchSpringBoardNow;
+@end
+
+static SpringBoard* springBoard;
+%hook SpringBoard
+- (id)init {
+    springBoard = %orig;
+    return springBoard;
+}
+%end
+*/
+// Got instance, yay :D
+
 static UIRefreshControl* refreshControl = nil;
 static BOOL enabled;
 
@@ -10,11 +26,12 @@ static void loadPreferences() {
     CFPreferencesAppSynchronize(CFSTR("com.sassoty.pulltorespring"));
     //In this case, you get the value for the key "enabled"
     //you could do the same thing for any other value, just cast it to id and use the conversion methods
-    enabled = [(id)CFPreferencesCopyAppValue(CFSTR("enabled"), CFSTR("com.sassoty.pulltorespring")) boolValue];
+    enabled = !CFPreferencesCopyAppValue(CFSTR("enabled"), CFSTR("com.sassoty.pulltorespring")) ? YES : [(id)CFPreferencesCopyAppValue(CFSTR("enabled"), CFSTR("com.sassoty.pulltorespring")) boolValue];
     if (enabled) {
         NSLog(@"[PullToRespring] We are enabled");
     } else {
         NSLog(@"[PullToRespring] We are NOT enabled");
+        if(refreshControl) [refreshControl removeFromSuperview];
     }
 }
 
@@ -23,7 +40,7 @@ static void loadPreferences() {
 - (void)viewDidAppear:(BOOL)view {
 	%orig;
     if(refreshControl) [refreshControl removeFromSuperview];
-    if (enabled) {
+    if(enabled) {
         refreshControl = [self initiateRefreshControl];
         [self.table addSubview:refreshControl];
     }
@@ -38,7 +55,11 @@ static void loadPreferences() {
 }
 
 %new - (void)respringForDays {
-	system("killall -9 SpringBoard");
+    NSLog(@"[PullToRespring] Respringing...");
+    [refreshControl endRefreshing];
+    // Not working, can anyone shed some light on this situation?
+	//[springBoard _relaunchSpringBoardNow];
+    system("killall -9 SpringBoard");
 }
 
 %end
