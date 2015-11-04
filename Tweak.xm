@@ -1,14 +1,29 @@
 #import <Preferences/Preferences.h>
-@interface PrefsListController : PSListController
--(UIRefreshControl *)initiateRefreshControl;
-+(id)sharedInstance;
--(id)table;
+#import "iOSVersion.m"
+
+@interface PSListController (PullToRespring)
++ (id)sharedInstance;
+- (UIRefreshControl *)initiateRefreshControl;
 @end
 
-static UIRefreshControl* refreshControl = nil;
+@interface PrefsListController : PSListController
+- (UIRefreshControl *)initiateRefreshControl;
++ (id)sharedInstance;
+- (id)table;
+@end
+
+static UIRefreshControl *refreshControl = nil;
 static BOOL enabled = YES;
 
-static PrefsListController* prefs;
+static PSListController *listController = nil;
+
+static void createRefreshControl() {
+    if(!listController) return;
+    if(refreshControl) [refreshControl removeFromSuperview];
+    refreshControl = [UIRefreshControl new];
+    [refreshControl addTarget:listController action:@selector(respringForDays) forControlEvents:UIControlEventValueChanged];
+    [[listController table] addSubview:refreshControl];
+}
 
 static void loadPreferences() {
     //Get previous value of enabled to see if value changed
@@ -21,42 +36,26 @@ static void loadPreferences() {
     enabled = !enabledVal ? YES : [enabledVal boolValue];
     if (enabled) {
         NSLog(@"[PullToRespring] We are enabled");
-        if(!prevEnabled) {
-            refreshControl = [[%c(PrefsListController) sharedInstance] initiateRefreshControl];
-            [[[%c(PrefsListController) sharedInstance] table] addSubview:refreshControl];
-        }
+        if(!prevEnabled)
+            createRefreshControl();
     } else {
         NSLog(@"[PullToRespring] We are NOT enabled");
         if(refreshControl) [refreshControl removeFromSuperview];
     }
 }
 
+// iOS 8
+%group Default
 %hook PrefsListController
 
--(id)init {
-    prefs = %orig;
-    return prefs;
+- (id)init {
+    listController = %orig;
+    return listController;
 }
 
-%new +(id)sharedInstance {
-    return prefs;
-}
-
--(void)viewDidAppear:(BOOL)view {
+- (void)viewDidAppear:(BOOL)view {
 	%orig;
-    if(refreshControl) [refreshControl removeFromSuperview];
-    if(enabled) {
-        refreshControl = [self initiateRefreshControl];
-        [self.table addSubview:refreshControl];
-    }
-}
-
-%new -(UIRefreshControl *)initiateRefreshControl {
-    if(!refreshControl) {
-        refreshControl = [[UIRefreshControl alloc] init];
-        [refreshControl addTarget:self action:@selector(respringForDays) forControlEvents:UIControlEventValueChanged];
-    }
-    return refreshControl;
+    createRefreshControl();
 }
 
 %new - (void)respringForDays {
@@ -66,13 +65,47 @@ static void loadPreferences() {
 }
 
 %end
+%end
+
+// iOS 9
+
+@interface PSUIPrefsListController : PSListController
+- (UIRefreshControl *)initiateRefreshControl;
+- (void)respringForDays;
+@end
+
+%group iOS9
+%hook PSUIPrefsListController
+
+- (id)init {
+    listController = %orig;
+    return listController;
+}
+
+- (void)viewDidAppear:(BOOL)view {
+    %orig;
+    createRefreshControl();
+}
+
+%new -(void)respringForDays {
+    NSLog(@"[PullToRespring] Respringing...");
+    [refreshControl endRefreshing];
+    system("killall backboardd");
+}
+
+%end
+%end
 
 %ctor {
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
-                                    NULL,
+    
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
                                     (CFNotificationCallback)loadPreferences,
-                                    CFSTR("com.sassoty.pulltorespring/prefsChanged"),
-                                    NULL,
-                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+                                    CFSTR("com.sassoty.pulltorespring/prefsChanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
     loadPreferences();
+
+    if(SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"9.0"))
+        %init(iOS9);
+    else
+        %init(Default);
+
 }
