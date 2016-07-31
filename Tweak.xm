@@ -7,14 +7,12 @@
 #endif
 
 @interface PSListController (PullToRespring)
-+ (id)sharedInstance;
-- (UIRefreshControl *)initiateRefreshControl;
+- (id)table;
 @end
 
 @interface PrefsListController : PSListController
-- (UIRefreshControl *)initiateRefreshControl;
-+ (id)sharedInstance;
-- (id)table;
+@end
+@interface PSUIPrefsListController : PSListController
 @end
 
 @interface SpringBoard : UIApplication
@@ -26,101 +24,87 @@
 - (void)exitAndRelaunch:(BOOL)arg1;
 @end
 
-static UIRefreshControl *refreshControl = nil;
-static BOOL enabled = YES;
+@interface PTRRespringHandler : NSObject
+@property (nonatomic, assign) PSListController *listController;
+@property (nonatomic, strong) UIRefreshControl *refreshControl;
++ (instancetype)sharedInstance;
+- (void)refreshControlValueChangedFORDAYS:(UIRefreshControl *)refreshControl;
+- (void)updateRefreshControlExistence:(BOOL)shouldExist;
+@end
 
-static PSListController *listController = nil;
-
-static void createRefreshControl() {
-	// If we don't have an instance of the prefs list, we can't do anything
-    if(!listController) return;
-    // If refreshControl exists, remove it so we can readd
-    if(refreshControl) [refreshControl removeFromSuperview];
-    // Reinstantiate new refresh control
-    refreshControl = [UIRefreshControl new];
-    [refreshControl addTarget:listController action:@selector(respringForDays) forControlEvents:UIControlEventValueChanged];
-    // Add to table -- table handles refresh control subviews automatically
-    [[listController table] addSubview:refreshControl];
+// Take PSListController argument so we can add the refresh control to the view
+static UIRefreshControl *createRefreshControlWithListController(PSListController *listController) {
+	// Remove previous if existing
+    [PTRRespringHandler.sharedInstance updateRefreshControlExistence:NO];
+    // Instantiate new refresh control
+    UIRefreshControl *refreshControl = [UIRefreshControl new];
+	[refreshControl addTarget:[PTRRespringHandler sharedInstance] action:@selector(refreshControlValueChangedFORDAYS:) forControlEvents:UIControlEventValueChanged];
+    // Setup property references
+    PTRRespringHandler.sharedInstance.listController = listController;
+    PTRRespringHandler.sharedInstance.refreshControl = refreshControl;
+	// Return refreshControl
+	return refreshControl;
 }
 
 static void loadPreferences() {
-	// Use previous value to see if we have to add it while in-app
-    BOOL prevEnabled = enabled;
-    // Sync preferences and retrieve
-    CFPreferencesAppSynchronize(CFSTR("com.sassoty.pulltorespring"));
-    id enabledVal = (id)CFPreferencesCopyAppValue(CFSTR("enabled"), CFSTR("com.sassoty.pulltorespring"));
-    // If not set, default to being enabled
-    enabled = enabledVal ? [enabledVal boolValue] : YES;
-    if (enabled) {
-        HBLogDebug(@"[PullToRespring] We are enabled");
-        // If was previously disabled, add to list right away (instantaneous effect)
-        if(!prevEnabled)
-            createRefreshControl();
-    } else {
-        HBLogDebug(@"[PullToRespring] We are NOT enabled");
-        // Remove if we're disabling it (instantaneous effect)
-        if(refreshControl) [refreshControl removeFromSuperview];
+	// Sync preferences and retrieve
+	CFPreferencesAppSynchronize(CFSTR("com.sassoty.pulltorespring"));
+	id isEnabledVal = (id)CFPreferencesCopyAppValue(CFSTR("Enabled"), CFSTR("com.sassoty.pulltorespring"));
+    // Have the controller update the existence of the refresh control
+    [PTRRespringHandler.sharedInstance updateRefreshControlExistence:(isEnabledVal ? [isEnabledVal boolValue] : YES)];
+}
+
+// iOS 8 & 7
+%hook PrefsListController
+- (void)viewDidAppear:(BOOL)animated {
+	%orig;
+    [self.table addSubview:createRefreshControlWithListController(self)];
+    loadPreferences();
+}
+%end // End of PrefsListController
+
+// iOS 9 +
+%hook PSUIPrefsListController
+- (void)viewDidAppear:(BOOL)animated {
+	%orig;
+    [self.table addSubview:createRefreshControlWithListController(self)];
+    loadPreferences();
+}
+%end // End of PSUIPrefsListController
+
+@implementation PTRRespringHandler
+
++ (instancetype)sharedInstance {
+	static PTRRespringHandler *sharedInstance = nil;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		sharedInstance = [PTRRespringHandler new];
+	});
+	return sharedInstance;
+}
+
+- (void)refreshControlValueChangedFORDAYS:(UIRefreshControl *)refreshControl {
+	[refreshControl endRefreshing];
+	if(IS_IOS_OR_NEWER(iOS_9_2)) {
+		// Send notification to relaunch from SpringBoard
+		notify_post("com.sassoty.pulltorespring.relaunchsb");
+	}else {
+		// Respring directly from SpringBoard instance
+		[(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
+	}
+}
+
+- (void)updateRefreshControlExistence:(BOOL)shouldExist {
+    if(shouldExist) {
+        [self.listController.table addSubview:createRefreshControlWithListController(self.listController)];
+    }else {
+        if(self.refreshControl) {
+            [self.refreshControl removeFromSuperview];
+        }
     }
 }
 
-// iOS 8
-%group BelowiOS9
-%hook PrefsListController
-
-- (id)init {
-    listController = %orig;
-    return listController;
-}
-
-- (void)viewDidAppear:(BOOL)view {
-	%orig;
-    createRefreshControl();
-}
-
-%new - (void)respringForDays {
-    HBLogDebug(@"[PullToRespring] Respringing...");
-    [refreshControl endRefreshing];
-    [(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
-}
-
-%end // End of PrefsListController
-%end // End of BelowiOS9
-
-// iOS 9
-
-@interface PSUIPrefsListController : PSListController
-- (UIRefreshControl *)initiateRefreshControl;
-- (void)respringForDays;
 @end
-
-%hook PSUIPrefsListController
-
-- (id)init {
-    listController = %orig;
-    return listController;
-}
-
-- (void)viewDidAppear:(BOOL)view {
-    %orig;
-    createRefreshControl();
-}
-
-%group iOS91Below
-%new - (void)respringForDays {
-    HBLogDebug(@"[PullToRespring] Respringing...");
-    [refreshControl endRefreshing];
-    [(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
-}
-%end // End of iOS91Below
-%group iOS92Up
-%new - (void)respringForDays {
-    HBLogDebug(@"[PullToRespring] Respringing...");
-    [refreshControl endRefreshing];
-    // Send notification to relaunch from SpringBoard
-    notify_post("com.sassoty.pulltorespring.relaunchsb");
-}
-%end // End of iOS92Up
-%end // End of PSUIPrefsListController
 
 // SpringBoard listens for a notification because we must call this WITHIN the SpringBoard process
 static void relaunchSpringBoard() {
@@ -128,32 +112,15 @@ static void relaunchSpringBoard() {
 }
 
 %ctor {
-
 	// Preferences app
-    if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.Preferences"]) {
-    	    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-    				(CFNotificationCallback)loadPreferences,
-    				CFSTR("com.sassoty.pulltorespring.prefschanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-    	    loadPreferences();
-
-    	if(IS_IOS_OR_NEWER(iOS_9_2)) {
-    		%init(iOS92Up);
-    	// iOS 9.2 won't be included in this because it would've gotten caught in the first if
-    	}else if(IS_IOS_BETWEEN(iOS_9_0, iOS_9_2)) {
-    		%init(iOS91Below);
-    	}else {
-    	    %init(BelowiOS9);
-    	}
-
-    	// No groups inside groups, but we can have initialize ungrouped stuff too
-    	if(IS_IOS_OR_NEWER(iOS_9_0)) {
-    		%init;
-    	}
-    // SpringBoard process
-    }else if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-    	    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-    				(CFNotificationCallback)relaunchSpringBoard,
-    				CFSTR("com.sassoty.pulltorespring.relaunchsb"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-    }
-
+	if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.Preferences"]) {
+			CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+					(CFNotificationCallback)loadPreferences,
+					CFSTR("com.sassoty.pulltorespring.prefschanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+	// SpringBoard process
+	}else if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+			CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+					(CFNotificationCallback)relaunchSpringBoard,
+					CFSTR("com.sassoty.pulltorespring.relaunchsb"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+	}
 }

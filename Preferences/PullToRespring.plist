@@ -13,7 +13,7 @@
 		<key>icon</key>
 		<string>PullToRespring.png</string>
 		<key>key</key>
-		<string>enabled</string>
+		<string>Enabled</string>
 		<key>label</key>
 		<string>PullToRespring</string>
 		<key>PostNotification</key>
