@@ -1,5 +1,10 @@
-#import <Preferences/Preferences.h>
-#import "iOSVersion.m"
+#import <Preferences/PSListController.h>
+#import <version.h>
+#import <notify.h>
+
+#ifndef kCFCoreFoundationVersionNumber_iOS_9_2
+#define kCFCoreFoundationVersionNumber_iOS_9_2 1242.13
+#endif
 
 @interface PSListController (PullToRespring)
 + (id)sharedInstance;
@@ -12,40 +17,54 @@
 - (id)table;
 @end
 
+@interface SpringBoard : UIApplication
+- (void)_relaunchSpringBoardNow;
+@end
+
+@interface FBSystemService : NSObject
++ (id)sharedInstance;
+- (void)exitAndRelaunch:(BOOL)arg1;
+@end
+
 static UIRefreshControl *refreshControl = nil;
 static BOOL enabled = YES;
 
 static PSListController *listController = nil;
 
 static void createRefreshControl() {
+	// If we don't have an instance of the prefs list, we can't do anything
     if(!listController) return;
+    // If refreshControl exists, remove it so we can readd
     if(refreshControl) [refreshControl removeFromSuperview];
+    // Reinstantiate new refresh control
     refreshControl = [UIRefreshControl new];
     [refreshControl addTarget:listController action:@selector(respringForDays) forControlEvents:UIControlEventValueChanged];
+    // Add to table -- table handles refresh control subviews automatically
     [[listController table] addSubview:refreshControl];
 }
 
 static void loadPreferences() {
-    //Get previous value of enabled to see if value changed
+	// Use previous value to see if we have to add it while in-app
     BOOL prevEnabled = enabled;
-    //Preference stuff
+    // Sync preferences and retrieve
     CFPreferencesAppSynchronize(CFSTR("com.sassoty.pulltorespring"));
-    //In this case, you get the value for the key "enabled"
-    //you could do the same thing for any other value, just cast it to id and use the conversion methods
     id enabledVal = (id)CFPreferencesCopyAppValue(CFSTR("enabled"), CFSTR("com.sassoty.pulltorespring"));
-    enabled = !enabledVal ? YES : [enabledVal boolValue];
+    // If not set, default to being enabled
+    enabled = enabledVal ? [enabledVal boolValue] : YES;
     if (enabled) {
-        NSLog(@"[PullToRespring] We are enabled");
+        HBLogDebug(@"[PullToRespring] We are enabled");
+        // If was previously disabled, add to list right away (instantaneous effect)
         if(!prevEnabled)
             createRefreshControl();
     } else {
-        NSLog(@"[PullToRespring] We are NOT enabled");
+        HBLogDebug(@"[PullToRespring] We are NOT enabled");
+        // Remove if we're disabling it (instantaneous effect)
         if(refreshControl) [refreshControl removeFromSuperview];
     }
 }
 
 // iOS 8
-%group Default
+%group BelowiOS9
 %hook PrefsListController
 
 - (id)init {
@@ -59,13 +78,13 @@ static void loadPreferences() {
 }
 
 %new - (void)respringForDays {
-    NSLog(@"[PullToRespring] Respringing...");
+    HBLogDebug(@"[PullToRespring] Respringing...");
     [refreshControl endRefreshing];
-    system("killall backboardd");
+    [(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
 }
 
-%end
-%end
+%end // End of PrefsListController
+%end // End of BelowiOS9
 
 // iOS 9
 
@@ -74,7 +93,6 @@ static void loadPreferences() {
 - (void)respringForDays;
 @end
 
-%group iOS9
 %hook PSUIPrefsListController
 
 - (id)init {
@@ -87,25 +105,55 @@ static void loadPreferences() {
     createRefreshControl();
 }
 
-%new -(void)respringForDays {
-    NSLog(@"[PullToRespring] Respringing...");
+%group iOS91Below
+%new - (void)respringForDays {
+    HBLogDebug(@"[PullToRespring] Respringing...");
     [refreshControl endRefreshing];
-    system("killall backboardd");
+    [(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
+}
+%end // End of iOS91Below
+%group iOS92Up
+%new - (void)respringForDays {
+    HBLogDebug(@"[PullToRespring] Respringing...");
+    [refreshControl endRefreshing];
+    // Send notification to relaunch from SpringBoard
+    notify_post("com.sassoty.pulltorespring.relaunchsb");
+}
+%end // End of iOS92Up
+%end // End of PSUIPrefsListController
+
+// SpringBoard listens for a notification because we must call this WITHIN the SpringBoard process
+static void relaunchSpringBoard() {
+	[[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
 }
 
-%end
-%end
-
 %ctor {
-    
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-                                    (CFNotificationCallback)loadPreferences,
-                                    CFSTR("com.sassoty.pulltorespring/prefsChanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-    loadPreferences();
 
-    if(SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"9.0"))
-        %init(iOS9);
-    else
-        %init(Default);
+	// Preferences app
+    if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.Preferences"]) {
+    	    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+    				(CFNotificationCallback)loadPreferences,
+    				CFSTR("com.sassoty.pulltorespring.prefschanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    	    loadPreferences();
+
+    	if(IS_IOS_OR_NEWER(iOS_9_2)) {
+    		%init(iOS92Up);
+    	// iOS 9.2 won't be included in this because it would've gotten caught in the first if
+    	}else if(IS_IOS_BETWEEN(iOS_9_0, iOS_9_2)) {
+    		%init(iOS91Below);
+    	}else {
+    	    %init(BelowiOS9);
+    	}
+
+    	// No groups inside groups, but we can have initialize ungrouped stuff too
+    	if(IS_IOS_OR_NEWER(iOS_9_0)) {
+    		%init;
+    	}
+    // SpringBoard process
+    }else if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+    	    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+    				(CFNotificationCallback)relaunchSpringBoard,
+    				CFSTR("com.sassoty.pulltorespring.relaunchsb"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    }
 
 }

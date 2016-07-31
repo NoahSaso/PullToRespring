@@ -1,10 +1,10 @@
 Package: com.sassoty.pulltorespring
 Name: PullToRespring
 Depends: mobilesubstrate
-Version: 0.0.2
+Version: 1.0
 Architecture: iphoneos-arm
 Description: Pull down in Settings to respring
-Maintainer: Sassoty <sassoty@gmail.com>
-Author: Sassoty <sassoty@gmail.com>
+Maintainer: Noah Saso <noahsaso@gmail.com>
+Author: Noah Saso <noahsaso@gmail.com>
 Section: Tweaks
-Depiction: http://repo.sassoty.com/deps.php?pkg=com.sassoty.pulltorespring
+Depiction: http://repo.noahsaso.com/deps.php?pkg=com.sassoty.pulltorespring
