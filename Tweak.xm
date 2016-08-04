@@ -1,6 +1,5 @@
 #import <Preferences/PSListController.h>
 #import <version.h>
-#import <notify.h>
 
 #ifndef kCFCoreFoundationVersionNumber_iOS_9_2
 #define kCFCoreFoundationVersionNumber_iOS_9_2 1242.13
@@ -19,9 +18,13 @@
 - (void)_relaunchSpringBoardNow;
 @end
 
-@interface FBSystemService : NSObject
-+ (id)sharedInstance;
-- (void)exitAndRelaunch:(BOOL)arg1;
+@interface FBSSystemService : NSObject
++ (id)sharedService;
+- (void)sendActions:(id)arg1 withResult:(id)arg2;
+@end
+
+@interface SBSRelaunchAction : NSObject
++ (id)actionWithReason:(id)arg1 options:(int)arg2 targetURL:(id)arg3;
 @end
 
 @interface PTRRespringHandler : NSObject
@@ -86,10 +89,12 @@ static void loadPreferences() {
 - (void)refreshControlValueChangedFORDAYS:(UIRefreshControl *)refreshControl {
 	[refreshControl endRefreshing];
 	if(IS_IOS_OR_NEWER(iOS_9_2)) {
-		// Send notification to relaunch from SpringBoard
-		notify_post("com.sassoty.pulltorespring.relaunchsb");
+		// Respring (with fade!)
+		FBSSystemService *service = [%c(FBSSystemService) sharedService];
+		NSSet *actions = [NSSet setWithObject:[%c(SBSRelaunchAction) actionWithReason:@"RestartRenderServer" options:4 targetURL:nil]];
+		[service sendActions:actions withResult:nil];
 	}else {
-		// Respring directly from SpringBoard instance
+		// Respring
 		[(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
 	}
 }
@@ -106,21 +111,8 @@ static void loadPreferences() {
 
 @end
 
-// SpringBoard listens for a notification because we must call this WITHIN the SpringBoard process
-static void relaunchSpringBoard() {
-	[[%c(FBSystemService) sharedInstance] exitAndRelaunch:YES];
-}
-
 %ctor {
-	// Preferences app
-	if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.Preferences"]) {
-			CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-					(CFNotificationCallback)loadPreferences,
-					CFSTR("com.sassoty.pulltorespring.prefschanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-	// SpringBoard process
-	}else if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-			CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-					(CFNotificationCallback)relaunchSpringBoard,
-					CFSTR("com.sassoty.pulltorespring.relaunchsb"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-	}
+	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+			(CFNotificationCallback)loadPreferences,
+			CFSTR("com.sassoty.pulltorespring.prefschanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 }
