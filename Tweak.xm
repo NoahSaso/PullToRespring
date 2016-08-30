@@ -1,9 +1,5 @@
 #import <Preferences/PSListController.h>
-#import <version.h>
-
-#ifndef kCFCoreFoundationVersionNumber_iOS_9_2
-#define kCFCoreFoundationVersionNumber_iOS_9_2 1242.13
-#endif
+#import <notify.h>
 
 @interface PSListController (PullToRespring)
 - (id)table;
@@ -16,6 +12,7 @@
 
 @interface SpringBoard : UIApplication
 - (void)_relaunchSpringBoardNow;
+- (void)_tearDownNow;
 @end
 
 @interface FBSSystemService : NSObject
@@ -23,8 +20,8 @@
 - (void)sendActions:(id)arg1 withResult:(id)arg2;
 @end
 
-@interface SBSRelaunchAction : NSObject
-+ (id)actionWithReason:(id)arg1 options:(int)arg2 targetURL:(id)arg3;
+@interface SBSRestartRenderServerAction : NSObject
++ (id)restartActionWithTargetRelaunchURL:(id)arg1;
 @end
 
 @interface PTRRespringHandler : NSObject
@@ -57,11 +54,13 @@ static void loadPreferences() {
     [PTRRespringHandler.sharedInstance updateRefreshControlExistence:(isEnabledVal ? [isEnabledVal boolValue] : YES)];
 }
 
+%group NonSB
+
 // iOS 8 & 7
 %hook PrefsListController
 - (void)viewDidAppear:(BOOL)animated {
 	%orig;
-    [self.table addSubview:createRefreshControlWithListController(self)];
+    [self.table addSubview: createRefreshControlWithListController(self)];
     loadPreferences();
 }
 %end // End of PrefsListController
@@ -70,10 +69,12 @@ static void loadPreferences() {
 %hook PSUIPrefsListController
 - (void)viewDidAppear:(BOOL)animated {
 	%orig;
-    [self.table addSubview:createRefreshControlWithListController(self)];
+    [self.table addSubview: createRefreshControlWithListController(self)];
     loadPreferences();
 }
 %end // End of PSUIPrefsListController
+
+%end // %group NonSB
 
 @implementation PTRRespringHandler
 
@@ -88,20 +89,21 @@ static void loadPreferences() {
 
 - (void)refreshControlValueChangedFORDAYS:(UIRefreshControl *)refreshControl {
 	[refreshControl endRefreshing];
-	if(IS_IOS_OR_NEWER(iOS_9_2)) {
-		// Respring (with fade!)
-		FBSSystemService *service = [%c(FBSSystemService) sharedService];
-		NSSet *actions = [NSSet setWithObject:[%c(SBSRelaunchAction) actionWithReason:@"RestartRenderServer" options:4 targetURL:nil]];
-		[service sendActions:actions withResult:nil];
-	}else {
+	// iOS 8+
+	if(%c(SBSRestartRenderServerAction) && %c(FBSSystemService)) {
 		// Respring
-		[(SpringBoard *)[UIApplication sharedApplication] _relaunchSpringBoardNow];
+		FBSSystemService *service = [%c(FBSSystemService) sharedService];
+		[service sendActions:[NSSet setWithObject:[%c(SBSRestartRenderServerAction) restartActionWithTargetRelaunchURL:nil]] withResult:nil];
+	// iOS 7-
+	} else {
+		// Respring
+		notify_post("com.sassoty.pulltorespring.respring");
 	}
 }
 
 - (void)updateRefreshControlExistence:(BOOL)shouldExist {
     if(shouldExist) {
-        [self.listController.table addSubview:createRefreshControlWithListController(self.listController)];
+        [self.listController.table addSubview: createRefreshControlWithListController(self.listController)];
     }else {
         if(self.refreshControl) {
             [self.refreshControl removeFromSuperview];
@@ -111,8 +113,27 @@ static void loadPreferences() {
 
 @end
 
+static void respringSB() {
+	SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
+	if([springBoard respondsToSelector:@selector(_relaunchSpringBoardNow)]) {
+		[springBoard _relaunchSpringBoardNow];
+	}else if([springBoard respondsToSelector:@selector(_tearDownNow)]) {
+		[springBoard _tearDownNow];
+	}else {
+		// This block shouldn't happen TO MY KNOWLEDGE on iOS 7+
+		HBLogDebug(@"IF THIS IS CALLED, SOMETHING IS REALLLLLLLLLY WRONG");
+	}
+}
+
 %ctor {
-	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+	if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+				(CFNotificationCallback)respringSB,
+				CFSTR("com.sassoty.pulltorespring.respring"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+	}else {
+		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
 			(CFNotificationCallback)loadPreferences,
 			CFSTR("com.sassoty.pulltorespring.prefschanged"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+		%init(NonSB);
+	}
 }
