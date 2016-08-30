@@ -1,6 +1,4 @@
 ARCHS = arm64 armv7
-GO_EASY_ON_ME = 1
-
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = PullToRespring
