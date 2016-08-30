@@ -6,7 +6,6 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = PullToRespring
 PullToRespring_FILES = Tweak.xm
 PullToRespring_FRAMEWORKS = UIKit
-PullToRespring_PRIVATE_FRAMEWORKS = FrontBoardServices SpringBoardServices
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
