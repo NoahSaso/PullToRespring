@@ -10,9 +10,24 @@
 @interface PSUIPrefsListController : PSListController
 @end
 
+// iOS 10
+@interface SBRestartManager : NSObject
+- (void)restartWithTransitionRequest:(id)arg1;
+@end
+
+// iOS 10
+@interface SBRestartTransitionRequest : NSObject
+@property(nonatomic) int restartType;
+- (id)initWithRequester:(id)arg1 reason:(id)arg2;
+@property(nonatomic) _Bool wantsPersistentSnapshot;
+@property(nonatomic) double delay;
+@end
+
 @interface SpringBoard : UIApplication
 - (void)_relaunchSpringBoardNow;
 - (void)_tearDownNow;
+// iOS 10
+@property(readonly, nonatomic) SBRestartManager *restartManager;
 @end
 
 @interface FBSSystemService : NSObject
@@ -89,14 +104,15 @@ static void loadPreferences() {
 
 - (void)refreshControlValueChangedFORDAYS:(UIRefreshControl *)refreshControl {
 	[refreshControl endRefreshing];
-	// iOS 8+
+	// iOS 8 - 9
 	if(%c(SBSRestartRenderServerAction) && %c(FBSSystemService)) {
 		// Respring
 		FBSSystemService *service = [%c(FBSSystemService) sharedService];
 		[service sendActions:[NSSet setWithObject:[%c(SBSRestartRenderServerAction) restartActionWithTargetRelaunchURL:nil]] withResult:nil];
-	// iOS 7-
+	// iOS 7- or 10+
 	} else {
 		// Respring
+		HBLogDebug(@"notif respring")
 		notify_post("com.sassoty.pulltorespring.respring");
 	}
 }
@@ -116,9 +132,17 @@ static void loadPreferences() {
 static void respringSB() {
 	SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
 	if([springBoard respondsToSelector:@selector(_relaunchSpringBoardNow)]) {
+		HBLogDebug(@"relaunch");
 		[springBoard _relaunchSpringBoardNow];
 	}else if([springBoard respondsToSelector:@selector(_tearDownNow)]) {
+		HBLogDebug(@"tear down");
 		[springBoard _tearDownNow];
+	// iOS 10
+	}else if([springBoard respondsToSelector:@selector(restartManager:willRestartWithTransitionRequest:)]) {
+		HBLogDebug(@"restart manager");
+		SBRestartTransitionRequest *request = [[%c(SBRestartTransitionRequest) alloc] initWithRequester:@"PullToRespring" reason:@"Pulled"];
+		request.delay = 1.f;
+		[springBoard.restartManager restartWithTransitionRequest:request];
 	}else {
 		// This block shouldn't happen TO MY KNOWLEDGE on iOS 7+
 		HBLogDebug(@"IF THIS IS CALLED, SOMETHING IS REALLLLLLLLLY WRONG");
