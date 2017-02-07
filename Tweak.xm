@@ -141,7 +141,7 @@ static void respringSB() {
 	}else if([springBoard respondsToSelector:@selector(restartManager:willRestartWithTransitionRequest:)]) {
 		HBLogDebug(@"restart manager");
 		SBRestartTransitionRequest *request = [[%c(SBRestartTransitionRequest) alloc] initWithRequester:@"PullToRespring" reason:@"Pulled"];
-		request.delay = 1.f;
+		request.delay = 0.5f;
 		[springBoard.restartManager restartWithTransitionRequest:request];
 	}else {
 		// This block shouldn't happen TO MY KNOWLEDGE on iOS 7+
